@@ -451,7 +451,7 @@ def main(args):
         model_without_ddp = model.module
 
     if args.pretrained:
-        ckpt = torch.load(args.pretrained)
+        ckpt = torch.load(args.pretrained, weights_only=False)
         model_without_ddp.load_state_dict(ckpt)
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -530,7 +530,7 @@ def main(args):
         #     )  # Add this if you want to log benchmark results
 
     if args.resume:
-        checkpoint = torch.load(args.resume, map_location="cpu")
+        checkpoint = torch.load(args.resume, map_location="cpu", weights_only=False)
         model_without_ddp.load_state_dict(checkpoint["model"], strict=True)
         if args.use_ema:
             if "ema_model" in checkpoint:
