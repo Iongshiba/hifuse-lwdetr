@@ -5,18 +5,27 @@ A lightweight end-to-end object detection model combining HiFuse backbone with L
 ## Installation
 
 ### 1. Clone and install dependencies
+Note:
+- Recommend Python version: 3.11
+- PyTorch with Cuda
+- Cuda Toolkit for building Deformable DETR module
+
 ```bash
 git clone https://github.com/Iongshiba/trifuse-lwdetr.git
 cd trifuse-lwdetr
 pip install -r requirements.txt
 ```
 
-### 2. Build CUDA extension
+### 2. Build Deformable DETR module
 ```bash
 cd models/ops
 python setup.py build install
 cd ../..
 ```
+
+## Model
+
+Download the ChartDec model from Kaggle: https://www.kaggle.com/models/longshiba/chartdec
 
 ## Dataset
 
