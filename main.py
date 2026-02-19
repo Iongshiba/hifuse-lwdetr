@@ -28,7 +28,7 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler
 
 from datasets import build_dataset, get_coco_api_from_dataset
-from engine import evaluate, train_one_epoch
+from engine import evaluate, train_one_epoch, inference
 from models import build_model
 from util.drop_scheduler import drop_scheduler
 from util.get_param_dicts import get_param_dict
@@ -41,7 +41,7 @@ def get_args_parser():
     parser = argparse.ArgumentParser("Set transformer detector", add_help=False)
     parser.add_argument("--lr", default=4e-4, type=float)
     parser.add_argument("--lr_encoder", default=6e-4, type=float)
-    parser.add_argument("--batch_size", default=8, type=int)
+    parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--weight_decay", default=1e-4, type=float)
     parser.add_argument("--epochs", default=100, type=int)
     parser.add_argument("--lr_drop", default=30, type=int)
@@ -253,8 +253,9 @@ def get_args_parser():
     parser.add_argument("--dataset_file", default="chartrec")
     parser.add_argument(
         "--coco_path",
-        default=r"D:\Dataset\doclaynet\doclaynet_yolo_dataset_v1\images",
+        default=None,
         type=str,
+        help="Path to dataset directory with train/ and val/ folders",
     )
     parser.add_argument("--square_resize_div_64", action="store_true")
 
@@ -271,12 +272,36 @@ def get_args_parser():
     parser.add_argument("--resume", default="", help="resume from checkpoint")
     parser.add_argument(
         "--pretrained",
-        default=r"C:\Users\trand\longg\document\selfstudy\hifuse\reference\LW-DETR-main\wandb\trifuse_lwdetr_caev2.pth",
+        default=None,
+        help="Path to pretrained model weights",
     )
     parser.add_argument(
         "--start_epoch", default=0, type=int, metavar="N", help="start epoch"
     )
-    parser.add_argument("--eval", action="store_true")
+    parser.add_argument("--eval", action="store_true", help="Run evaluation only")
+    parser.add_argument(
+        "--inference", action="store_true", help="Run inference on images"
+    )
+    parser.add_argument(
+        "--input", type=str, default=None, help="Input image or directory for inference"
+    )
+    parser.add_argument(
+        "--score_threshold",
+        type=float,
+        default=0.5,
+        help="Score threshold for inference",
+    )
+    parser.add_argument(
+        "--visualize", action="store_true", help="Save visualization images"
+    )
+    parser.add_argument("--save_json", action="store_true", help="Save results as JSON")
+    parser.add_argument(
+        "--class_names",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Class names for visualization",
+    )
     parser.add_argument("--use_ema", action="store_true")
     parser.add_argument("--ema_decay", default=0.9997, type=float)
     parser.add_argument("--num_workers", default=2, type=int)
@@ -345,6 +370,54 @@ def get_args_parser():
 
 
 def main(args):
+    # Handle inference mode (doesn't need dataset)
+    if args.inference:
+        if args.input is None:
+            raise ValueError(
+                "Please provide --input with path to image or directory for inference"
+            )
+        if not args.pretrained:
+            raise ValueError(
+                "Please provide --resume or --pretrained with path to model checkpoint"
+            )
+
+        device = torch.device(args.device)
+        print("Building model for inference...")
+        model, criterion, postprocessors = build_model(args)
+        model.to(device)
+
+        # Load checkpoint
+        checkpoint_path = args.pretrained
+        print(f"Loading checkpoint from {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        state_dict = checkpoint["model"] if "model" in checkpoint else checkpoint
+        model.load_state_dict(state_dict, strict=True)
+        print("Model loaded successfully!")
+
+        # Run inference
+        inference(
+            model=model,
+            postprocessors=postprocessors,
+            input_path=args.input,
+            output_dir=args.output_dir,
+            device=device,
+            score_threshold=args.score_threshold,
+            visualize=args.visualize,
+            save_json=args.save_json,
+            class_names=args.class_names,
+        )
+        return
+
+    # Validate required arguments for training/eval
+    if args.coco_path is None:
+        raise ValueError(
+            "Please provide --  coco_path pointing to the dataset directory.\n"
+            "The directory should contain:\n"
+            "  - train/ folder with training images\n"
+            "  - val/ folder with validation images\n"
+            "  - train.json and val.json annotation files in COCO format"
+        )
+
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
     print(args)
@@ -376,11 +449,6 @@ def main(args):
             model, device_ids=[args.gpu], find_unused_parameters=True
         )
         model_without_ddp = model.module
-    # torch.save(
-    #     model_without_ddp.state_dict(),
-    #     r"C:\Users\trand\longg\document\selfstudy\hifuse\reference\LW-DETR-main\wandb\trifuse_lwdetr_ori.pth",
-    # )
-    # return
 
     if args.pretrained:
         ckpt = torch.load(args.pretrained)
