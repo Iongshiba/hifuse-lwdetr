@@ -1,0 +1,11 @@
+__pycache__/
+
+*.pth
+*.ipynb
+
+build/
+
+*.egg-info/
+.eggs/
+
+.env
